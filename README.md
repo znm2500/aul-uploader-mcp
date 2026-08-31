@@ -49,7 +49,73 @@ npm install
 
 ---
 
-## 3. CLI 调试模式
+## 2b. TRAE 接入 — 远程模式（HTTP / SSE）
+
+如果想让**另一台电脑的 TRAE**，或者**服务器上常驻**的 TRAE 也能调用同一套 MCP 工具，可以用 `--serve` 起一个 HTTP/SSE 服务器。
+
+**1. 在运行 MCP 的机器上启动服务（比如本机或服务器）：**
+
+```bash
+# 本机监听 3001 端口（默认 0.0.0.0，局域网所有网卡都能访问）
+node index.js --serve 3001
+
+# 或显式指定 host
+node index.js --serve 3001 --host 0.0.0.0
+```
+
+启动成功会输出：
+```
+=== AUL Uploader MCP Server (SSE / HTTP) running ===
+  Health check : http://0.0.0.0:3001/health
+  SSE endpoint : http://0.0.0.0:3001/sse
+  Message POST : http://0.0.0.0:3001/message
+```
+
+**2. 端点说明（同一个 Node http server 单端口统一提供）：**
+
+| 路径 | 方法 | 作用 |
+| --- | --- | --- |
+| `/health` | GET | 健康检查，返回 tools 数量、活跃 SSE 会话数 |
+| `/sse`    | GET | **SSE 下行**，TRAE 作为 EventSource 持续接收 MCP JSON-RPC 消息 |
+| `/message`| POST | **客户端上行**，TRAE 把工具调用/请求以 JSON-RPC 形式 POST 过来 |
+
+**3. 在 TRAE 的「远程 MCP」配置里填 SSE URL：**
+
+```json
+{
+  "mcpServers": {
+    "aul_uploader_remote": {
+      "transport": "sse",
+      "url": "http://<服务器IP或域名>:3001/sse"
+    }
+  }
+}
+```
+
+> 若要跨公网访问，建议：① 用 Nginx / Caddy 做 HTTPS 反代到 `http://127.0.0.1:3001`；② 加基础鉴权（如 `Authorization: Bearer <secret>`）或把 `--host` 绑到内网 IP + 走 VPN。SSE transport 本身不做鉴权。
+
+---
+
+## 3. 启动方式总览
+
+```bash
+# (1) 默认 / 显式：Stdio 子进程（本地 TRAE 接入）
+node index.js
+node index.js --stdio
+
+# (2) HTTP/SSE 服务器（远程 TRAE 接入）
+node index.js --serve 3001
+node index.js --serve 3001 --host 192.168.1.20
+
+# (3) 单次 CLI 工具调试
+node index.js --cli <tool> '<json_args>'
+```
+
+三种模式**二选一**启动，优先级：`--cli` > `--serve` > 默认 Stdio。
+
+---
+
+## 4. CLI 调试模式
 
 `index.js` 自带 `--cli` 参数，方便离线测试单个工具（不经过 MCP stdio 握手）：
 
@@ -73,7 +139,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-## 4. 工具总览
+## 5. 工具总览
 
 | # | 工具 | 说明 | 必须 Token |
 | ---: | --- | --- | --- |
