@@ -26,9 +26,11 @@ npm install
 
 ---
 
-## 2. TRAE 接入（stdio）
+## 2. 接入方式 — 本地（Stdio）
 
-在 TRAE 的 MCP 配置里添加：
+所有支持 **Model Context Protocol** 的客户端（TRAE、Claude Code、Cline/RooCode in VS Code、Windsurf、Cursor 等）都可以接这个服务器。本地接入的方式都是一样的：**让 AI 客户端以子进程方式启动 `node index.js`，并通过 stdin/stdout（stdio transport）与子进程交换 JSON-RPC**。
+
+配置文件位置因客户端而异，但 **`mcpServers` 的 JSON 结构是统一的**：
 
 ```json
 {
@@ -43,27 +45,53 @@ npm install
 }
 ```
 
-**关键提醒（Windows）：**
-- 不建议硬编码 `C:\Program Files\nodejs\node.exe`，直接写 `node`（通过 PATH 解析）兼容性更好。
-- 修改配置后需要在 TRAE 里重载 MCP 服务。
+> **说明**：
+> - `args[0]` 是 **绝对路径**（相对路径取决于 AI 客户端的工作目录，容易出错，建议写绝对）。
+> - Windows 下不要硬编码 `C:\Program Files\nodejs\node.exe`，直接写 `node`（依赖 PATH 解析）兼容性更好。
+> - macOS / Linux 上同理：`"command": "node"`，args 改成对应绝对路径。
+
+### 2.1 Claude Code（Anthropic）
+
+全局写在 `~/.claude/mcp.json`（`%USERPROFILE%\.claude\mcp.json` on Windows），或只在某项目里生效就写 `<project>/.claude.json`。格式与上面完全一致。
+
+参考：[Claude Code 官方文档 → MCP](https://docs.anthropic.com/en/docs/claude-code/mcp)
+
+### 2.2 TRAE
+
+打开 TRAE 设置 → 「MCP 服务器」→ 新增 stdio server，直接粘贴上面的 JSON 即可；或编辑 TRAE 的全局 MCP 配置文件（一般在 `%USERPROFILE%\.trae-cn\mcp.json` 或 TRAE 数据目录下的对应文件）。
+
+### 2.3 VS Code — Cline / RooCode / MCP 插件
+
+- **Cline（原 RooCode）**：VS Code 扩展设置里找到 "Cline: MCP Servers" 项，粘贴与上面相同的 `mcpServers` JSON。
+- **MCP 官方扩展**（`ModelContextProtocol.mcp-vscode`）：打开命令面板 → **MCP: Configure MCP Servers**，再加一条 `aul_uploader`。
+- 其他 AI Agent 扩展（Code GPT、Continue、Solo 等）：基本都在扩展设置里提供 `mcpServers` 字段，格式一致。
+
+### 2.4 Windsurf / Cursor
+
+两者都支持 MCP。在设置里找到 "MCP" / "Tools" 节，添加 server：
+- **Name**：`aul_uploader`
+- **Command**：`node`
+- **Args**：`["D:\\path\\to\\index.js"]`
+
+具体入口随版本会变化，以客户端为准。
 
 ---
 
-## 2b. TRAE 接入 — 远程模式（HTTP / SSE）
+## 3. 接入方式 — 远程（HTTP / SSE）
 
-如果想让**另一台电脑的 TRAE**，或者**服务器上常驻**的 TRAE 也能调用同一套 MCP 工具，可以用 `--serve` 起一个 HTTP/SSE 服务器。
+如果想让**另一台电脑**、**服务器上常驻**的 AI 客户端也能调用同一套 MCP 工具，不用把代码和依赖拷过去，直接在有代码/Token 的机器上起一个 HTTP/SSE 服务端即可。
 
-**1. 在运行 MCP 的机器上启动服务（比如本机或服务器）：**
+**启动服务端（本地或服务器）：**
 
 ```bash
-# 本机监听 3001 端口（默认 0.0.0.0，局域网所有网卡都能访问）
+# 监听所有网卡（0.0.0.0:3001），局域网内任一台机器都能连
 node index.js --serve 3001
 
-# 或显式指定 host
-node index.js --serve 3001 --host 0.0.0.0
+# 或绑定内网特定 IP
+node index.js --serve 3001 --host 192.168.1.20
 ```
 
-启动成功会输出：
+启动成功后会打印：
 ```
 === AUL Uploader MCP Server (SSE / HTTP) running ===
   Health check : http://0.0.0.0:3001/health
@@ -71,15 +99,15 @@ node index.js --serve 3001 --host 0.0.0.0
   Message POST : http://0.0.0.0:3001/message
 ```
 
-**2. 端点说明（同一个 Node http server 单端口统一提供）：**
+**端点说明（单端口统一提供）：**
 
 | 路径 | 方法 | 作用 |
 | --- | --- | --- |
-| `/health` | GET | 健康检查，返回 tools 数量、活跃 SSE 会话数 |
-| `/sse`    | GET | **SSE 下行**，TRAE 作为 EventSource 持续接收 MCP JSON-RPC 消息 |
-| `/message`| POST | **客户端上行**，TRAE 把工具调用/请求以 JSON-RPC 形式 POST 过来 |
+| `/health` | GET | 健康检查，返回工具数量、活跃 SSE 会话数 |
+| `/sse`    | GET | **SSE 下行**，客户端以 EventSource 方式挂上来收 JSON-RPC |
+| `/message`| POST | **客户端上行**，把 JSON-RPC 请求 POST 回来 |
 
-**3. 在 TRAE 的「远程 MCP」配置里填 SSE URL：**
+**客户端配置（SSE transport）—— 通用结构：**
 
 ```json
 {
@@ -92,18 +120,36 @@ node index.js --serve 3001 --host 0.0.0.0
 }
 ```
 
-> 若要跨公网访问，建议：① 用 Nginx / Caddy 做 HTTPS 反代到 `http://127.0.0.1:3001`；② 加基础鉴权（如 `Authorization: Bearer <secret>`）或把 `--host` 绑到内网 IP + 走 VPN。SSE transport 本身不做鉴权。
+### 3.1 Claude Code（SSE）
+
+把上面的 SSE 配置加到 `~/.claude/mcp.json` 或 `.claude.json`。Claude Code 支持 `transport: sse` + `url`。
+
+### 3.2 TRAE（SSE）
+
+在 TRAE 的「远程 MCP 服务器」里添加，URL 填 `http://<host>:3001/sse`，transport 选 SSE。
+
+### 3.3 VS Code / 其他 IDE
+
+大部分 Agent 扩展对 SSE 的配置名可能略有不同：有的叫 `transport: "streamable-http"`，有的直接用 `url` + `type: "http"`。格式不同时以该客户端官方文档为准，但**服务端 `/sse` + `/message` 的组合是 SSE transport 规范定义的**，按规范实现的客户端都能接。
+
+### 3.4 安全提醒（跨公网部署必看）
+
+当前 SSE transport **本身不提供鉴权**，所以：
+1. 内网/VPN 场景：`--host` 绑内网 IP，直接用就好。
+2. 跨公网：
+   - 前面套 Nginx / Caddy 反代成 HTTPS；
+   - 叠加一层鉴权（Basic Auth、`Authorization: Bearer <secret>` Header、IP 白名单三者至少选一个）；
+   - 或用 Tailscale/ZeroTier 之类的组网工具把它暴露在虚拟内网。
 
 ---
 
-## 3. 启动方式总览
+## 4. 启动方式总览
 
 ```bash
-# (1) 默认 / 显式：Stdio 子进程（本地 TRAE 接入）
+# (1) 默认 / 显式：Stdio 子进程（本地 AI 客户端接入）
 node index.js
-node index.js --stdio
 
-# (2) HTTP/SSE 服务器（远程 TRAE 接入）
+# (2) HTTP/SSE 服务器（远程 AI 客户端接入）
 node index.js --serve 3001
 node index.js --serve 3001 --host 192.168.1.20
 
@@ -115,7 +161,7 @@ node index.js --cli <tool> '<json_args>'
 
 ---
 
-## 4. CLI 调试模式
+## 5. CLI 调试模式
 
 `index.js` 自带 `--cli` 参数，方便离线测试单个工具（不经过 MCP stdio 握手）：
 
@@ -139,7 +185,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-## 5. 工具总览
+## 6. 工具总览
 
 | # | 工具 | 说明 | 必须 Token |
 | ---: | --- | --- | --- |
@@ -154,9 +200,9 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-## 5. 工具详解
+## 7. 工具详解
 
-### 5.1 `check_tokens`
+### 7.1 `check_tokens`
 
 验证 GitHub / GitCode Token 对仓库的权限（读 + 写），并判断 Token 类型（Classic / Fine-grained / PAT4AI）。
 
@@ -188,7 +234,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.2 `get_config`
+### 7.2 `get_config`
 
 读取远程 `{library}/config.json`，可按 `game_id` / `game_name` / `game_name_en` 搜索游戏；不指定时返回全量列表。
 
@@ -228,7 +274,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.3 `get_cover_image` ⭐
+### 7.3 `get_cover_image` ⭐
 
 从远程库下载封面图 `{game_id}.webp`。优先走 **jsDelivr CDN**（速度快、无需 Token），CDN 失败时自动回退到 **GitHub Contents API**（base64 解码写盘）。
 
@@ -260,7 +306,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.4 `upload_cover_image`
+### 7.4 `upload_cover_image`
 
 上传/更新一张封面图到 `data` 分支根目录。自动用 `sharp` 压缩（长边 460、质量 80、格式强制 webp → `{id}.webp`）。
 
@@ -278,7 +324,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.5 `release_game_asset`
+### 7.5 `release_game_asset`
 
 发布安装包。步骤：
 1. 创建/更新 GitHub Release（tag 形如 `{game_id}-v{version}-{flavor}-{channel}`）；
@@ -303,7 +349,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.6 `add_game_entry`
+### 7.6 `add_game_entry`
 
 往 `{library}/config.json` 里**合并**（按 `id` 去重）一个游戏条目。如果 tags 是 `["mobile"]` 但 `library=desktop`，会额外自动把 tags 追加为 `["mobile", ...]`。提交到 GitHub 并可选同步到 GitCode。
 
@@ -320,7 +366,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.7 `full_upload_game` ⭐
+### 7.7 `full_upload_game` ⭐
 
 一步完成 **封面上传 + 安装包发布 + 游戏条目添加**。内部自动根据返回的 sha 拼 `jsdelivr` 直链填到 `game.cover` 与 `game.downloadUrl`，无需用户操心。
 
@@ -332,7 +378,7 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-### 5.8 `get_apk_id` ⭐
+### 7.8 `get_apk_id` ⭐
 
 纯本地解析 APK，提取 `packageName` 并把 `.` 替换成 `_` 生成符合 AUL 规则的 `game_id`。同时返回 `versionName` / `versionCode`。
 
@@ -356,9 +402,9 @@ node index.js --cli get_cover_image '{"library":"desktop","game_id":"my_game","o
 
 ---
 
-## 6. 常见工作流
+## 8. 常见工作流
 
-### 6.1 桌面端：上传新游戏
+### 8.1 桌面端：上传新游戏
 
 ```
 get_apk_id 或自己决定 game_id
@@ -373,7 +419,7 @@ full_upload_game(
 )
 ```
 
-### 6.2 移动端：上传新 APK
+### 8.2 移动端：上传新 APK
 
 ```
 get_apk_id(apk_path="D:/apk/app.apk")
@@ -387,7 +433,7 @@ full_upload_game(
 )
 ```
 
-### 6.3 本地没封面 → 复用远程已有封面
+### 8.3 本地没封面 → 复用远程已有封面
 
 ```
 get_cover_image(
@@ -403,7 +449,7 @@ full_upload_game(
 )
 ```
 
-### 6.4 只读操作（免 Token）
+### 8.4 只读操作（免 Token）
 
 - 查询已有游戏：`get_config`
 - 下载封面：`get_cover_image`
@@ -413,7 +459,7 @@ full_upload_game(
 
 ---
 
-## 7. 同步工具描述到 TRAE 目录
+## 9. 同步工具描述到 TRAE 目录
 
 `tools/*.json` + `SERVER_METADATA.json` 需要拷贝到 TRAE 的 solo agent lite 目录下，TRAE 才能在 UI 侧展示新工具：
 
@@ -441,7 +487,7 @@ Get-ChildItem (Join-Path $src "tools") -Filter *.json | ForEach-Object {
 
 ---
 
-## 8. 依赖说明
+## 10. 依赖说明
 
 | 包 | 用途 |
 | --- | --- |
@@ -452,7 +498,7 @@ Get-ChildItem (Join-Path $src "tools") -Filter *.json | ForEach-Object {
 
 ---
 
-## 9. 错误排查
+## 11. 错误排查
 
 | 症状 | 常见原因 | 解决 |
 | --- | --- | --- |
