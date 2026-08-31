@@ -1,0 +1,67 @@
+{
+  "name": "full_upload_game",
+  "description": "一键完整上传游戏：验证Token -> 获取配置 -> 添加游戏条目 -> 上传封面 -> 发布Release。推荐使用。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "token_gh": {
+        "type": "string",
+        "description": "GitHub Token"
+      },
+      "token_gt": {
+        "type": "string",
+        "description": "GitCode Token"
+      },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "description": "目标游戏库"
+      },
+      "image_path": {
+        "type": "string",
+        "description": "本地封面图片绝对路径"
+      },
+      "file_path": {
+        "type": "string",
+        "description": "本地游戏安装包绝对路径（.7z 或 .apk）"
+      },
+      "game": {
+        "type": "object",
+        "description": "游戏元数据",
+        "properties": {
+          "id": { "type": "string", "description": "唯一 ID，字母数字下划线" },
+          "name": {
+            "type": "object",
+            "properties": {
+              "zh": { "type": "string" },
+              "en": { "type": "string" }
+            },
+            "required": ["zh", "en"]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "zh": { "type": "string" },
+              "en": { "type": "string" }
+            },
+            "required": ["zh", "en"]
+          },
+          "engine": { "type": "string", "description": "引擎名" },
+          "version": { "type": "string", "enum": ["0.0.1", "0.0.2"] },
+          "hot_score": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "热度分数"
+          }
+        },
+        "required": ["id", "name", "author", "engine", "version"]
+      },
+      "upload_target": {
+        "type": "string",
+        "enum": ["github", "gitcode", "both"],
+        "description": "Release 上传目标"
+      }
+    },
+    "required": ["token_gh", "token_gt", "library", "image_path", "file_path", "game"]
+  }
+}
