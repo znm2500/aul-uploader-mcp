@@ -1,0 +1,23 @@
+{
+  "name": "get_config",
+  "description": "获取指定游戏库的配置文件 config.json，返回 games 列表以及配置在双仓库的 sha。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "token_gh": {
+        "type": "string",
+        "description": "GitHub Token"
+      },
+      "token_gt": {
+        "type": "string",
+        "description": "GitCode Token"
+      },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "description": "目标游戏库：desktop=电脑端(.7z)，mobile=手机端(.apk)"
+      }
+    },
+    "required": ["token_gh", "token_gt", "library"]
+  }
+}
