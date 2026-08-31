@@ -1,0 +1,31 @@
+{
+  "name": "get_cover_image",
+  "description": "从远程游戏库下载指定游戏的封面图片（{game_id}.webp）。优先走 jsDelivr CDN，失败时回退到 GitHub Contents API，写入本地文件后返回路径与大小。典型用法：上传/更新本地游戏时，从远程已有游戏拉取封面作为本地素材复用。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "description": "目标游戏库"
+      },
+      "game_id": {
+        "type": "string",
+        "description": "游戏 ID（与远程 data 分支中的封面文件名 {game_id}.webp 对应）"
+      },
+      "output_path": {
+        "type": "string",
+        "description": "可选，保存到的本地绝对路径。未提供时写入系统临时目录并返回路径。"
+      },
+      "use_cdn": {
+        "type": "boolean",
+        "description": "是否优先使用 jsDelivr CDN 下载（更快，无需 Token），默认 true"
+      },
+      "token_gh": {
+        "type": "string",
+        "description": "GitHub Token，仅在 CDN 失败回退到 GitHub API 时才需要；一般可留空。"
+      }
+    },
+    "required": ["library", "game_id"]
+  }
+}
