@@ -1,0 +1,31 @@
+{
+  "name": "upload_cover_image",
+  "description": "上传或更新游戏封面图片到 data 分支。自动缩放（最大 640x480）并转换为 WebP，同步到 GitHub+GitCode。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "token_gh": {
+        "type": "string",
+        "description": "GitHub Token"
+      },
+      "token_gt": {
+        "type": "string",
+        "description": "GitCode Token"
+      },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "description": "目标游戏库"
+      },
+      "image_path": {
+        "type": "string",
+        "description": "本地图片文件的绝对路径（支持 webp/png/jpg/jpeg/gif/bmp/svg）"
+      },
+      "game_id": {
+        "type": "string",
+        "description": "游戏唯一 ID（只允许字母数字下划线）"
+      }
+    },
+    "required": ["token_gh", "token_gt", "library", "image_path", "game_id"]
+  }
+}
