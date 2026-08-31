@@ -1,0 +1,41 @@
+{
+  "name": "release_game_asset",
+  "description": "发布游戏安装包到 GitHub/GitCode Release。对应 Release tag v{version} 必须预先存在。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "token_gh": {
+        "type": "string",
+        "description": "GitHub Token"
+      },
+      "token_gt": {
+        "type": "string",
+        "description": "GitCode Token"
+      },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "description": "目标游戏库，决定文件扩展名 desktop=.7z, mobile=.apk"
+      },
+      "version": {
+        "type": "string",
+        "enum": ["0.0.1", "0.0.2"],
+        "description": "游戏版本号（对应 Release tag v{version}）"
+      },
+      "game_id": {
+        "type": "string",
+        "description": "游戏 ID，资产文件名为 {game_id}.{7z|apk}"
+      },
+      "file_path": {
+        "type": "string",
+        "description": "本地安装包的绝对路径"
+      },
+      "upload_target": {
+        "type": "string",
+        "enum": ["github", "gitcode", "both"],
+        "description": "上传目标平台"
+      }
+    },
+    "required": ["token_gh", "token_gt", "library", "version", "game_id", "file_path"]
+  }
+}

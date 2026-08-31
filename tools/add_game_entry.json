@@ -1,0 +1,79 @@
+{
+  "name": "add_game_entry",
+  "description": "向 config.json 中新增一个游戏条目并同步推送到 GitHub 和 GitCode 的 data 分支。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "token_gh": {
+        "type": "string",
+        "description": "GitHub Token"
+      },
+      "token_gt": {
+        "type": "string",
+        "description": "GitCode Token"
+      },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "description": "目标游戏库"
+      },
+      "sha_gh": {
+        "type": "string",
+        "description": "当前 config 在 GitHub 的 blob SHA（通过 get_config 获取）"
+      },
+      "sha_gt": {
+        "type": "string",
+        "description": "当前 config 在 GitCode 的 blob SHA（通过 get_config 获取）"
+      },
+      "config": {
+        "type": "object",
+        "description": "完整的 config 对象（通过 get_config 获取的 raw_config）"
+      },
+      "game": {
+        "type": "object",
+        "description": "游戏元数据对象",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "游戏唯一 ID（只能字母数字下划线）"
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "zh": { "type": "string" },
+              "en": { "type": "string" }
+            },
+            "required": ["zh", "en"]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "zh": { "type": "string" },
+              "en": { "type": "string" }
+            },
+            "required": ["zh", "en"]
+          },
+          "engine": {
+            "type": "string",
+            "description": "游戏引擎名称，如 Unity/GMS2/RenPy 等"
+          },
+          "version": {
+            "type": "string",
+            "enum": ["0.0.1", "0.0.2"]
+          },
+          "hot_score": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "热度分数，非负整数"
+          },
+          "publish_time": {
+            "type": "string",
+            "description": "可选，发布时间 ISO 格式；默认使用当前时间"
+          }
+        },
+        "required": ["id", "name", "author", "engine", "version"]
+      }
+    },
+    "required": ["token_gh", "token_gt", "library", "sha_gh", "sha_gt", "config", "game"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "get_apk_id",
+  "description": "解析 APK 文件的包名（package name），将包名中的点号 '.' 替换为下划线 '_'，生成符合 AUL 规则的游戏 ID。用于移动端游戏上传前的 ID 自动生成。同时返回 version_name 和 version_code。",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "apk_path": {
+        "type": "string",
+        "description": "本地 APK 文件的绝对路径"
+      }
+    },
+    "required": ["apk_path"]
+  }
+}
