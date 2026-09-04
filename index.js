@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -9,6 +10,7 @@ import axios from "axios";
 import sharp from "sharp";
 import fs from "node:fs/promises";
 import os from "node:os";
+import http from "node:http";
 import path from "node:path";
 
 // ========== 常量配置 ==========
@@ -475,6 +477,97 @@ function addGameEntry(configObj, gameData) {
   return entry;
 }
 
+// ========== 8. 删除仓库文件 ==========
+async function deleteRepoFile(tokenGh, tokenGt, repo, fileName) {
+  const client = axios.create();
+  const errors = [];
+
+  // GitHub
+  try {
+    const existingGh = await ghGetFile(client, tokenGh, repo, fileName);
+    if (existingGh) {
+      await client.delete(`${GH_API}/${OWNER}/${repo}/contents/${fileName}`, {
+        headers: ghHeaders(tokenGh),
+        data: { message: `delete ${fileName} via AUL-MCP`, sha: existingGh.sha, branch: BRANCH }
+      });
+    }
+  } catch (e) {
+    errors.push(`GitHub 删除失败: ${e.message}`);
+  }
+
+  // GitCode
+  try {
+    const existingGc = await gcGetFile(client, tokenGt, repo, fileName);
+    if (existingGc) {
+      await client.delete(`${GC_API}/${OWNER_GT}/${repo}/contents/${fileName}`, {
+        headers: { "User-Agent": "AUL-MCP-Server" },
+        params: gcParams(tokenGt),
+        data: { message: `delete ${fileName} via AUL-MCP`, sha: existingGc.sha, branch: BRANCH }
+      });
+    }
+  } catch (e) {
+    errors.push(`GitCode 删除失败: ${e.message}`);
+  }
+
+  if (errors.length) throw new Error(errors.join(" | "));
+  return true;
+}
+
+// ========== 9. 删除 Release 文件 ==========
+async function deleteReleaseAsset(tokenGh, tokenGt, repo, version, fileName, target = "both") {
+  const client = axios.create();
+  const tag = `v${version}`;
+  const errors = [];
+  const doGh = target === "github" || target === "both";
+  const doGt = target === "gitcode" || target === "both";
+
+  // --- GitHub ---
+  if (doGh) {
+    try {
+      const infoUrl = `${GH_API}/${OWNER}/${repo}/releases/tags/${tag}`;
+      const info = await client.get(infoUrl, { headers: ghHeaders(tokenGh) });
+      const asset = (info.data.assets || []).find((a) => a.name === fileName);
+      
+      if (asset) {
+        await client.delete(`${GH_API}/${OWNER}/${repo}/releases/assets/${asset.id}`, {
+          headers: ghHeaders(tokenGh)
+        });
+      } else {
+        throw new Error(`未在 GitHub Release ${tag} 中找到文件 ${fileName}`);
+      }
+    } catch (e) {
+      errors.push(`GitHub Asset 删除失败: ${e.message}`);
+    }
+  }
+
+  // --- GitCode ---
+  if (doGt) {
+    try {
+      const infoUrl = `${GC_API}/${OWNER_GT}/${repo}/releases/tags/${tag}`;
+      const info = await client.get(infoUrl, {
+        headers: { "User-Agent": "AUL-MCP-Server" },
+        params: gcParams(tokenGt)
+      });
+      const asset = (info.data.assets || []).find((a) => a.name === fileName);
+      
+      if (asset) {
+        const gcDeleteUrl = `${GC_API}/${OWNER_GT}/${repo}/releases/${tag}/attach_files/${asset.id}`;
+        await client.delete(gcDeleteUrl, {
+          headers: { "User-Agent": "AUL-MCP-Server" },
+          params: gcParams(tokenGt)
+        });
+      } else {
+        throw new Error(`未在 GitCode Release ${tag} 中找到文件 ${fileName}`);
+      }
+    } catch (e) {
+      errors.push(`GitCode Asset 删除失败: ${e.message}`);
+    }
+  }
+
+  if (errors.length) throw new Error(errors.join(" | "));
+  return true;
+}
+
 // ========== MCP 工具列表描述 ==========
 const TOOLS = [
   {
@@ -774,6 +867,64 @@ const TOOLS = [
       required: ["library", "game_id"],
     },
   },
+  // ----- 新增的两个工具 -----
+  {
+    name: "delete_repo_file",
+    description:
+      "从指定游戏库（data 分支）中删除一个文件（如封面图片 .webp）。会同时删除 GitHub 和 GitCode 上的文件。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        token_gh: { type: "string", description: "GitHub Token" },
+        token_gt: { type: "string", description: "GitCode Token" },
+        library: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          description: "目标游戏库",
+          default: "desktop",
+        },
+        file_name: {
+          type: "string",
+          description: "要删除的文件名（例如 game_id.webp）",
+        },
+      },
+      required: ["token_gh", "token_gt", "library", "file_name"],
+    },
+  },
+  {
+    name: "delete_release_asset",
+    description:
+      "从指定的 Release（通过版本号）中删除一个已发布的资源文件（如 .7z 或 .apk）。可指定仅删除 GitHub 或 GitCode 或两者。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        token_gh: { type: "string", description: "GitHub Token" },
+        token_gt: { type: "string", description: "GitCode Token" },
+        library: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          description: "目标游戏库",
+          default: "desktop",
+        },
+        version: {
+          type: "string",
+          enum: ["0.0.1", "0.0.2"],
+          description: "游戏版本号，对应 Release tag v{version}",
+        },
+        file_name: {
+          type: "string",
+          description: "要删除的资源文件名（例如 game_id.7z 或 game_id.apk）",
+        },
+        upload_target: {
+          type: "string",
+          enum: ["github", "gitcode", "both"],
+          description: "目标平台，默认 both",
+          default: "both",
+        },
+      },
+      required: ["token_gh", "token_gt", "library", "version", "file_name"],
+    },
+  },
 ];
 
 // ========== 工具实现路由 ==========
@@ -999,6 +1150,29 @@ async function handleCall(name, args) {
         size_bytes: dataBuf.length,
       };
     }
+    // ----- 新增的两个工具处理 -----
+    case "delete_repo_file": {
+      const repo = REPOS[args.library] || REPOS.desktop;
+      await deleteRepoFile(args.token_gh, args.token_gt, repo, args.file_name);
+      return { ok: true, deleted_file: args.file_name, library: args.library };
+    }
+    case "delete_release_asset": {
+      const repo = REPOS[args.library] || REPOS.desktop;
+      await deleteReleaseAsset(
+        args.token_gh,
+        args.token_gt,
+        repo,
+        args.version,
+        args.file_name,
+        args.upload_target || "both"
+      );
+      return {
+        ok: true,
+        version: args.version,
+        file: args.file_name,
+        target: args.upload_target || "both",
+      };
+    }
     default:
       throw new Error(`未知工具: ${name}`);
   }
@@ -1084,12 +1258,158 @@ async function cliMain() {
   }
 }
 
-async function main() {
-  const ran = await cliMain();
-  if (ran === false) {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+// ========== HTTP/SSE 服务端支持（--serve <port> [--host HOST]） ==========
+async function serveMain(port, host = "0.0.0.0") {
+  // 同一个端口挂：GET /sse（SSE 下行）、POST /message（客户端上行）、GET /health
+  // SSE transport 是「每个客户端连接一个 transport 实例」，所以不能全局复用。
+  // 我们把当前活跃的 transport 按「连接生成的唯一 sessionId」存在 Map 中。
+  const sessions = new Map();
+  let sessionCounter = 0;
+
+  function readBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let total = 0;
+      req.on("data", (c) => {
+        total += c.length;
+        if (total > 16 * 1024 * 1024) {
+          reject(new Error("body too large (> 16 MB)"));
+          req.destroy();
+          return;
+        }
+        chunks.push(c);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      req.on("error", reject);
+    });
   }
+
+  function sendJson(res, status, obj) {
+    const body = JSON.stringify(obj, null, 2) + "\n";
+    res.writeHead(status, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Length": Buffer.byteLength(body),
+      "Cache-Control": "no-store",
+    });
+    res.end(body);
+  }
+
+  const httpServer = http.createServer(async (req, res) => {
+    try {
+      // SSE 下行：TRAE / Claude 打开 EventSource 连到这里
+      if (req.method === "GET" && req.url === "/sse") {
+        const id = ++sessionCounter;
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        // 写一个欢迎 comment，确认连接建立
+        res.write(": aul_uploader MCP SSE endpoint ready (session=" + id + ")\n\n");
+
+        const transport = new SSEServerTransport("/message", res);
+        sessions.set(id, transport);
+        req.on("close", () => {
+          sessions.delete(id);
+          transport.close().catch(() => {});
+        });
+
+        // connect 会开始把 server 的消息推送到 SSE res 上。
+        // 同时 transport 会在 EventSource 的 res 上注入一个 endpoint 供
+        // POST /message 回调识别，但这里我们按 session 做路由，更直观。
+        transport._aulSessionId = id;
+        await server.connect(transport);
+        return;
+      }
+
+      // MCP 客户端上行：POST JSON-RPC 消息到 /message
+      if (req.method === "POST" && req.url === "/message") {
+        // 最简单：当前一个进程只允许「一个活跃 SSE 客户端」时直接取第一个。
+        // 支持多客户端：按 header / query 的 sessionId 路由，没给就 fallback 到第一个。
+        const wantIdRaw =
+          (req.headers["x-session-id"] && String(req.headers["x-session-id"])) ||
+          new URL(req.url, "http://localhost").searchParams.get("sid");
+        const wantId = wantIdRaw ? Number(wantIdRaw) : NaN;
+        let target = null;
+        if (!Number.isNaN(wantId) && sessions.has(wantId)) {
+          target = sessions.get(wantId);
+        } else if (sessions.size === 1) {
+          target = sessions.values().next().value;
+        }
+        if (!target) {
+          sendJson(res, 400, { error: "没有活跃的 SSE 连接，请先 GET /sse 建立会话" });
+          return;
+        }
+        const bodyText = await readBody(req);
+        // handlePostMessage 签名：(req, res, bodyText)，内部处理 JSON 解析 + JSON-RPC dispatch
+        await target.handlePostMessage(req, res, bodyText);
+        return;
+      }
+
+      // 健康检查
+      if (req.method === "GET" && (req.url === "/" || req.url === "/health")) {
+        sendJson(res, 200, {
+          ok: true,
+          server: "aul_uploader",
+          mode: "sse",
+          tools: TOOLS.length,
+          active_sessions: sessions.size,
+          sse_endpoint: "/sse",
+          message_endpoint: "/message",
+        });
+        return;
+      }
+
+      sendJson(res, 404, { error: "not found: " + req.method + " " + req.url });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message || String(err) });
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    httpServer.on("error", reject);
+    httpServer.listen(port, host, () => resolve());
+  });
+
+  const urls = [];
+  for (const h of [host, "127.0.0.1", "localhost"]) {
+    urls.push(`http://${h}:${port}`);
+  }
+  console.log("=== AUL Uploader MCP Server (SSE / HTTP) running ===");
+  console.log("  Health check :", urls[0] + "/health");
+  console.log("  SSE endpoint :", urls[0] + "/sse");
+  console.log("  Message POST :", urls[0] + "/message");
+  console.log("  Listening on :", `${host}:${port}`);
+  console.log("  (在 TRAE 远程 MCP 配置里填入 SSE URL，例如:", urls[1] + "/sse )");
+}
+
+async function main() {
+  // 解析命令行：优先顺序 --cli > --serve N [--host HOST] > 默认 stdio（或显式 --stdio）
+  const argv = process.argv.slice(2);
+
+  // CLI
+  const ran = await cliMain();
+  if (ran !== false) return;
+
+  const serveIdx = argv.indexOf("--serve");
+  if (serveIdx >= 0) {
+    const portRaw = argv[serveIdx + 1];
+    const port = Number(portRaw);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      console.error("错误: --serve <port> 需要合法的端口号 1-65535，收到:", portRaw);
+      process.exit(1);
+    }
+    let host = "0.0.0.0";
+    const hostIdx = argv.indexOf("--host");
+    if (hostIdx >= 0 && argv[hostIdx + 1]) host = argv[hostIdx + 1];
+    await serveMain(port, host);
+    return;
+  }
+
+  // 默认：Stdio（或显式 --stdio）
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }
 
 main().catch((err) => {

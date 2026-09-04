@@ -1,0 +1,21 @@
+{
+  "name": "delete_repo_file",
+  "description": "从 GitHub 和 GitCode 的 data 分支中删除指定文件（如配置、封面等）。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "token_gh": { "type": "string", "description": "GitHub Token" },
+      "token_gt": { "type": "string", "description": "GitCode Token" },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "default": "desktop"
+      },
+      "file_name": {
+        "type": "string",
+        "description": "要删除的文件名（包括相对路径）"
+      }
+    },
+    "required": ["token_gh", "token_gt", "library", "file_name"]
+  }
+}

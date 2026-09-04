@@ -1,0 +1,30 @@
+{
+  "name": "delete_release_asset",
+  "description": "从 GitHub 和 GitCode 的特定 Release 中删除文件（如旧版本的安装包）。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "token_gh": { "type": "string", "description": "GitHub Token" },
+      "token_gt": { "type": "string", "description": "GitCode Token" },
+      "library": {
+        "type": "string",
+        "enum": ["desktop", "mobile"],
+        "default": "desktop"
+      },
+      "version": {
+        "type": "string",
+        "description": "Release 版本号，如 0.0.1"
+      },
+      "file_name": {
+        "type": "string",
+        "description": "资源文件名，如 game_id.apk"
+      },
+      "target": {
+        "type": "string",
+        "enum": ["github", "gitcode", "both"],
+        "default": "both"
+      }
+    },
+    "required": ["token_gh", "token_gt", "library", "version", "file_name"]
+  }
+}
